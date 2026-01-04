@@ -17,7 +17,8 @@ import {
   LogOut,
   Snowflake,
   StarHalf,
-  AlertCircle
+  AlertCircle,
+  Copy
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -42,10 +43,12 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration & Initialization ---
+// RULE: This environment provides the config via __firebase_config. 
+// If it's empty, the app cannot communicate with Firestore.
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
-   apiKey: "AIzaSyAU8KiDVf10Vc8TC_BMrfAuDKtCTKtH56g",
+    apiKey: "AIzaSyAU8KiDVf10Vc8TC_BMrfAuDKtCTKtH56g",
   authDomain: "denver-coffee-rater.firebaseapp.com",
   projectId: "denver-coffee-rater",
   storageBucket: "denver-coffee-rater.firebasestorage.app",
@@ -54,7 +57,10 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
   measurementId: "G-VCB5KZ4CPY"
     };
 
+// 1. PASTE YOUR GOOGLE MAPS API KEY HERE
 const GOOGLE_MAPS_API_KEY = "AIzaSyDDhQzKVKGRZcJ6T_phKAZ25mW4kq-VTfM";
+
+// 2. COPY YOUR UID FROM THE FOOTER AND PASTE IT HERE TO EDIT THE PUBLIC LIST
 const ADMIN_UID = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
 
 const app = initializeApp(firebaseConfig);
@@ -63,14 +69,13 @@ const googleProvider = new GoogleAuthProvider();
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'denver-coffee-rater';
 
-// Helper to render half stars
+// Helper to render stars
 const RatingStars = ({ rating, size = 14, interactive = false, onRate = null }) => {
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => {
         const isFull = rating >= star;
         const isHalf = rating >= star - 0.5 && rating < star;
-        
         return (
           <div key={star} className="relative cursor-pointer group" onClick={() => interactive && onRate && onRate(star)}>
             {interactive && (
@@ -101,9 +106,7 @@ const RatingStars = ({ rating, size = 14, interactive = false, onRate = null }) 
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState(null);
-
-  const [view, setView] = useState('public'); 
+  const [view, setView] = useState('private'); 
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -158,17 +161,10 @@ export default function App() {
           }));
         }
       });
-      
-      const handleKeyDown = (e) => {
-        if (e.key === 'Enter') e.preventDefault();
-      };
-      const inputEl = inputRef.current;
-      inputEl.addEventListener('keydown', handleKeyDown);
-      return () => inputEl.removeEventListener('keydown', handleKeyDown);
     }
   }, [isModalOpen, mapsLoaded]);
 
-  // Auth Effect
+  // Auth Effect (CRITICAL RULE 3)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -187,11 +183,12 @@ export default function App() {
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser?.uid === ADMIN_UID) setView('public');
     });
     return () => unsubscribe();
   }, []);
 
-  // Data Fetching Effect
+  // Data Fetching Effect (CRITICAL RULE 1 & 2)
   useEffect(() => {
     if (!user) return;
     setLoading(true);
@@ -202,11 +199,12 @@ export default function App() {
 
     const unsubscribe = onSnapshot(query(collectionRef), (snapshot) => {
       const shopsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      shopsData.sort((a, b) => (view === 'public' ? (b.rating - a.rating) : (b.createdAt?.seconds - a.createdAt?.seconds)));
+      // Sort in memory to follow Rule 2
+      shopsData.sort((a, b) => (view === 'public' ? (b.rating - a.rating) : (b.updatedAt?.seconds - a.updatedAt?.seconds)));
       setShops(shopsData);
       setLoading(false);
     }, (err) => {
-      console.error("Firestore Error:", err);
+      console.error("Firestore Fetch Error:", err);
       setLoading(false);
     });
 
@@ -214,11 +212,10 @@ export default function App() {
   }, [user, view]);
 
   const handleGoogleLogin = async () => {
-    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      setAuthError(error.message);
+      console.error(error);
     }
   };
 
@@ -229,36 +226,35 @@ export default function App() {
     if (!user || isSaving) return;
 
     if (!formData.name) {
-      setSaveError("Please select a shop from search results.");
+      setSaveError("Please select a coffee shop from the search results.");
       return;
     }
 
     setIsSaving(true);
     setSaveError(null);
 
-    const shopData = {
-      ...formData,
-      updatedAt: serverTimestamp(),
-      createdBy: user.uid,
-      userName: user.displayName || 'Anonymous'
-    };
-
     try {
+      // Logic Check
       if (view === 'public' && user.uid !== ADMIN_UID) {
-        throw new Error("Only the admin can edit the public leaderboard!");
+        throw new Error("Only the administrator can update the Public leaderboard. Please switch to the 'Private' tab to save your own shops!");
       }
+
+      const shopData = {
+        ...formData,
+        updatedAt: serverTimestamp(),
+        createdBy: user.uid,
+        userName: user.displayName || 'Anonymous'
+      };
 
       if (currentShop) {
         const docRef = view === 'public'
           ? doc(db, 'artifacts', appId, 'public', 'data', 'coffee_shops', currentShop.id)
           : doc(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops', currentShop.id);
-        
         await updateDoc(docRef, shopData);
       } else {
         const collectionRef = view === 'public'
           ? collection(db, 'artifacts', appId, 'public', 'data', 'coffee_shops')
           : collection(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops');
-        
         await addDoc(collectionRef, { ...shopData, createdAt: serverTimestamp() });
       }
       
@@ -267,32 +263,25 @@ export default function App() {
       setFormData({ name: '', location: '', placeId: '', rating: 0, price: 1, notes: '', hasColdBrew: false });
     } catch (err) {
       console.error("Save Error:", err);
-      setSaveError(err.message || "Failed to save. Check your connection/config.");
+      setSaveError(err.message || "Permission Denied. Ensure you have valid credentials and are saving to your Private list.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const isAdmin = user?.uid === ADMIN_UID;
+  const handleDelete = async (shopId) => {
+    if (!window.confirm('Delete this entry?')) return;
+    try {
+      const docRef = view === 'public'
+        ? doc(db, 'artifacts', appId, 'public', 'data', 'coffee_shops', shopId)
+        : doc(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops', shopId);
+      await deleteDoc(docRef);
+    } catch (err) {
+      alert("Delete failed: Permission denied.");
+    }
+  };
 
   if (authLoading) return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><Loader2 className="animate-spin text-amber-800" size={40} /></div>;
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-stone-100 text-center">
-          <div className="inline-flex bg-amber-700 p-4 rounded-2xl text-white mb-6 shadow-lg shadow-amber-700/20"><Coffee size={40} /></div>
-          <h1 className="text-3xl font-black uppercase tracking-tight text-stone-900 mb-2">Denver Brews</h1>
-          <p className="text-stone-500 font-medium mb-8">Sign in to start ranking your favorites.</p>
-          <button onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-3 bg-white border border-stone-200 text-stone-700 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-colors shadow-sm">
-            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Continue with Google
-          </button>
-          {authError && <p className="text-red-500 text-xs font-bold mt-4">{authError}</p>}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 font-sans pb-20">
@@ -306,7 +295,7 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {(view === 'private' || isAdmin) && (
+            {(view === 'private' || user?.uid === ADMIN_UID) && (
               <button onClick={() => { setSaveError(null); setCurrentShop(null); setFormData({name:'', location:'', placeId:'', rating:0, price:1, notes:'', hasColdBrew: false}); setIsModalOpen(true); }}
                       className="bg-stone-900 text-white p-2 rounded-full hover:scale-105 transition-transform"><Plus size={24} /></button>
             )}
@@ -320,6 +309,11 @@ export default function App() {
           <button onClick={() => setView('public')} className={`flex-1 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${view === 'public' ? 'bg-white shadow-sm text-amber-800' : 'text-stone-500'}`}><Globe size={16} /> Public</button>
           <button onClick={() => setView('private')} className={`flex-1 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${view === 'private' ? 'bg-white shadow-sm text-amber-800' : 'text-stone-500'}`}><Lock size={16} /> Private</button>
         </div>
+        {view === 'public' && user?.uid !== ADMIN_UID && (
+          <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-2 text-amber-800 text-[10px] font-bold uppercase tracking-tight">
+            <Lock size={12}/> Global Leaderboard (Read-Only)
+          </div>
+        )}
       </div>
 
       <main className="max-w-2xl mx-auto px-4 mt-6 space-y-4">
@@ -332,7 +326,7 @@ export default function App() {
           <div className="space-y-4">
             {shops.length === 0 && (
               <div className="text-center py-12 border-2 border-dashed border-stone-200 rounded-3xl text-stone-400 font-bold uppercase tracking-widest text-xs">
-                No shops found. Add one!
+                No shops here yet.
               </div>
             )}
             {shops.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase())).map((shop, idx) => (
@@ -343,33 +337,24 @@ export default function App() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-lg font-black text-stone-900 leading-tight">{shop.name}</h2>
-                        {shop.hasColdBrew && (
-                          <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border border-blue-100">
-                            <Snowflake size={10} className="fill-blue-600" /> Cold Brew
-                          </span>
-                        )}
+                        {shop.hasColdBrew && <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase"><Snowflake size={10} /> Cold Brew</span>}
                       </div>
-                      <div className="flex items-center gap-x-3 gap-y-1 mt-1">
-                        {shop.location && (
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.location)}&query_place_id=${shop.placeId}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-amber-700 text-xs font-bold hover:underline">
-                            <MapPin size={12} /> {shop.location.split(',')[0]}
-                          </a>
-                        )}
+                      <div className="mt-1 text-amber-700 text-xs font-bold flex items-center gap-1">
+                        <MapPin size={12} /> {shop.location?.split(',')[0]}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <RatingStars rating={shop.rating} />
                       <div className="flex gap-0.5">
-                        {[...Array(4)].map((_, i) => <DollarSign key={i} size={14} className={i < shop.price ? 'text-green-600 font-bold' : 'text-stone-200'} />)}
+                        {[1,2,3,4].map(i => <DollarSign key={i} size={14} className={i <= shop.price ? 'text-green-600' : 'text-stone-200'} />)}
                       </div>
                     </div>
                   </div>
                   {shop.notes && <p className="text-stone-500 text-sm mt-3 italic">"{shop.notes}"</p>}
-                  
-                  {(view === 'private' || isAdmin) && (
+                  {(view === 'private' || user?.uid === ADMIN_UID) && (
                     <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-stone-50 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => { setSaveError(null); setCurrentShop(shop); setFormData(shop); setIsModalOpen(true); }} className="text-stone-400 hover:text-stone-900 flex items-center gap-1 text-xs font-bold"><Edit2 size={14}/> Edit</button>
-                      <button onClick={async () => { if(window.confirm('Delete?')) await deleteDoc(doc(db, view === 'public' ? `artifacts/${appId}/public/data/coffee_shops` : `artifacts/${appId}/users/${user.uid}/coffee_shops`, shop.id)); }} className="text-stone-400 hover:text-red-600 flex items-center gap-1 text-xs font-bold"><Trash2 size={14}/> Delete</button>
+                      <button onClick={() => handleDelete(shop.id)} className="text-stone-400 hover:text-red-600 flex items-center gap-1 text-xs font-bold"><Trash2 size={14}/> Delete</button>
                     </div>
                   )}
                 </div>
@@ -383,45 +368,27 @@ export default function App() {
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
             <div className="p-6 border-b border-stone-100 flex justify-between items-center">
-              <h3 className="text-xl font-black uppercase tracking-tight">{currentShop ? 'Update' : 'Rank New'} Shop</h3>
+              <h3 className="text-xl font-black uppercase tracking-tight">{currentShop ? 'Update' : 'Add New'} Shop</h3>
               <button onClick={() => setIsModalOpen(false)} className="bg-stone-100 p-2 rounded-full"><X size={20}/></button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-5">
-              {saveError && (
-                <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-600 text-xs font-bold leading-snug">
-                  <AlertCircle size={16} className="shrink-0" />
-                  {saveError}
-                </div>
-              )}
-
+              {saveError && <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-600 text-[11px] font-bold"><AlertCircle size={14} className="shrink-0" />{saveError}</div>}
               <div>
-                <label className="block text-[10px] font-black uppercase text-stone-400 mb-1 ml-1">Search</label>
+                <label className="block text-[10px] font-black uppercase text-stone-400 mb-1 ml-1">Search (Google Maps)</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18}/>
-                  <input ref={inputRef} type="text" placeholder="Find on Google Maps..." className="w-full bg-stone-50 border border-stone-200 py-3 pl-10 pr-4 rounded-xl outline-none" />
+                  <input ref={inputRef} type="text" placeholder="Start typing coffee shop name..." className="w-full bg-stone-50 border border-stone-200 py-3 pl-10 pr-4 rounded-xl outline-none" />
                 </div>
-                {formData.name && <p className="mt-2 text-xs font-bold text-amber-700">Selected: {formData.name}</p>}
+                {formData.name && <p className="mt-2 text-xs font-bold text-amber-700">Ready to save: {formData.name}</p>}
               </div>
-
               <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100">
-                <div>
-                  <h4 className="text-xs font-black uppercase text-stone-900">Cold Brew?</h4>
-                  <p className="text-[10px] text-stone-400 font-bold uppercase">Does this shop serve cold brew?</p>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={() => setFormData({...formData, hasColdBrew: !formData.hasColdBrew})}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${formData.hasColdBrew ? 'bg-blue-600' : 'bg-stone-200'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.hasColdBrew ? 'left-7' : 'left-1'}`} />
-                </button>
+                <div className="text-xs font-black uppercase text-stone-900">Cold Brew?</div>
+                <button type="button" onClick={() => setFormData({...formData, hasColdBrew: !formData.hasColdBrew})} className={`w-12 h-6 rounded-full relative transition-colors ${formData.hasColdBrew ? 'bg-blue-600' : 'bg-stone-200'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.hasColdBrew ? 'left-7' : 'left-1'}`} /></button>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Rating (inc. 0.5)</label>
+                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Rating</label>
                   <RatingStars interactive={true} rating={formData.rating} size={28} onRate={(r) => setFormData({...formData, rating: r})} />
-                  <p className="text-[10px] font-black text-amber-700 mt-1 uppercase">Score: {formData.rating}</p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Price</label>
@@ -430,17 +397,25 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
               <textarea rows="3" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full bg-stone-50 border border-stone-200 p-4 rounded-xl outline-none resize-none" placeholder="Notes..."></textarea>
-
-              <button type="submit" disabled={isSaving} className={`w-full flex items-center justify-center gap-2 text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-all ${isSaving ? 'bg-stone-400' : 'bg-amber-700 hover:bg-amber-800'}`}>
-                {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Confirm
-              </button>
+              <button type="submit" disabled={isSaving} className={`w-full flex items-center justify-center gap-2 text-white py-4 rounded-2xl font-black uppercase tracking-widest ${isSaving ? 'bg-stone-400' : 'bg-amber-700 hover:bg-amber-800 shadow-lg shadow-amber-700/20'}`}>{isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} {currentShop ? 'Save Changes' : 'Confirm Rank'}</button>
             </form>
           </div>
         </div>
       )}
-      <footer className="py-8 text-center text-[10px] text-stone-400 font-bold uppercase tracking-tighter">UID: {user?.uid}</footer>
+
+      <footer className="mt-12 py-8 bg-stone-100 flex flex-col items-center">
+        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-stone-200 shadow-sm mb-2">
+          <code className="text-[10px] text-stone-500">{user?.uid || 'Not Authenticated'}</code>
+          <button onClick={() => { navigator.clipboard.writeText(user?.uid || ''); alert('UID Copied!'); }} className="text-stone-400 hover:text-amber-700"><Copy size={12}/></button>
+        </div>
+        <p className="text-[9px] text-stone-400 font-bold uppercase">UID for Admin Access</p>
+        {!firebaseConfig.apiKey && (
+          <p className="mt-4 text-[10px] text-red-500 font-black animate-pulse">
+            ⚠️ WARNING: No Firebase API Key detected in environment.
+          </p>
+        )}
+      </footer>
     </div>
   );
 }
