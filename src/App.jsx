@@ -18,7 +18,8 @@ import {
   Snowflake,
   StarHalf,
   AlertCircle,
-  Copy
+  Copy,
+  LogIn
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -43,8 +44,6 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration & Initialization ---
-// RULE: This environment provides the config via __firebase_config. 
-// If it's empty, the app cannot communicate with Firestore.
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -171,7 +170,10 @@ export default function App() {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
         } else {
-          await signInAnonymously(auth);
+          // Stay anonymous by default if not already logged in
+          if (!auth.currentUser) {
+            await signInAnonymously(auth);
+          }
         }
       } catch (err) {
         console.error("Auth Initialization Error:", err);
@@ -199,7 +201,6 @@ export default function App() {
 
     const unsubscribe = onSnapshot(query(collectionRef), (snapshot) => {
       const shopsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort in memory to follow Rule 2
       shopsData.sort((a, b) => (view === 'public' ? (b.rating - a.rating) : (b.updatedAt?.seconds - a.updatedAt?.seconds)));
       setShops(shopsData);
       setLoading(false);
@@ -213,13 +214,21 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     try {
+      setAuthLoading(true);
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      console.error(error);
+      console.error("Google Login Error:", error);
+      alert("Login failed. Make sure Google is enabled as an Auth provider in Firebase.");
+    } finally {
+      setAuthLoading(false);
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = async () => {
+    await signOut(auth);
+    // Sign back in anonymously so the app still works
+    await signInAnonymously(auth);
+  };
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
@@ -234,9 +243,8 @@ export default function App() {
     setSaveError(null);
 
     try {
-      // Logic Check
       if (view === 'public' && user.uid !== ADMIN_UID) {
-        throw new Error("Only the administrator can update the Public leaderboard. Please switch to the 'Private' tab to save your own shops!");
+        throw new Error("Only the administrator can update the Public leaderboard.");
       }
 
       const shopData = {
@@ -263,7 +271,7 @@ export default function App() {
       setFormData({ name: '', location: '', placeId: '', rating: 0, price: 1, notes: '', hasColdBrew: false });
     } catch (err) {
       console.error("Save Error:", err);
-      setSaveError(err.message || "Permission Denied. Ensure you have valid credentials and are saving to your Private list.");
+      setSaveError(err.message || "Permission Denied.");
     } finally {
       setIsSaving(false);
     }
@@ -295,11 +303,25 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {user?.isAnonymous ? (
+              <button 
+                onClick={handleGoogleLogin} 
+                className="flex items-center gap-2 bg-white border border-stone-200 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-stone-50 transition-colors shadow-sm"
+              >
+                <LogIn size={14} className="text-amber-700" /> Sign In
+              </button>
+            ) : (
+              <div className="flex items-center gap-3">
+                {user?.photoURL && (
+                  <img src={user.photoURL} alt="profile" className="w-8 h-8 rounded-full border border-stone-200 shadow-sm" />
+                )}
+                <button onClick={handleLogout} className="p-2 text-stone-400 hover:text-red-600 transition-colors"><LogOut size={20} /></button>
+              </div>
+            )}
             {(view === 'private' || user?.uid === ADMIN_UID) && (
               <button onClick={() => { setSaveError(null); setCurrentShop(null); setFormData({name:'', location:'', placeId:'', rating:0, price:1, notes:'', hasColdBrew: false}); setIsModalOpen(true); }}
                       className="bg-stone-900 text-white p-2 rounded-full hover:scale-105 transition-transform"><Plus size={24} /></button>
             )}
-            <button onClick={handleLogout} className="p-2 text-stone-400 hover:text-red-600"><LogOut size={20} /></button>
           </div>
         </div>
       </header>
@@ -314,19 +336,25 @@ export default function App() {
             <Lock size={12}/> Global Leaderboard (Read-Only)
           </div>
         )}
+        {user?.isAnonymous && view === 'private' && (
+          <div className="mt-3 p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-center justify-between text-blue-800 text-[10px] font-bold uppercase tracking-tight">
+            <span>Signed in as Guest. Link your Google account to save across devices.</span>
+            <button onClick={handleGoogleLogin} className="underline">Link Account</button>
+          </div>
+        )}
       </div>
 
       <main className="max-w-2xl mx-auto px-4 mt-6 space-y-4">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-          <input type="text" placeholder={`Search...`} className="w-full bg-white border border-stone-200 py-3 pl-12 pr-4 rounded-2xl shadow-sm outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <input type="text" placeholder={`Search your ratings...`} className="w-full bg-white border border-stone-200 py-3 pl-12 pr-4 rounded-2xl shadow-sm outline-none focus:ring-2 focus:ring-amber-700/10 transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
 
         {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-amber-700" /></div> : (
           <div className="space-y-4">
             {shops.length === 0 && (
               <div className="text-center py-12 border-2 border-dashed border-stone-200 rounded-3xl text-stone-400 font-bold uppercase tracking-widest text-xs">
-                No shops here yet.
+                {view === 'private' ? "You haven't rated any shops yet." : "No global rankings yet."}
               </div>
             )}
             {shops.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase())).map((shop, idx) => (
@@ -377,28 +405,28 @@ export default function App() {
                 <label className="block text-[10px] font-black uppercase text-stone-400 mb-1 ml-1">Search (Google Maps)</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18}/>
-                  <input ref={inputRef} type="text" placeholder="Start typing coffee shop name..." className="w-full bg-stone-50 border border-stone-200 py-3 pl-10 pr-4 rounded-xl outline-none" />
+                  <input ref={inputRef} type="text" placeholder="Start typing coffee shop name..." className="w-full bg-stone-50 border border-stone-200 py-3 pl-10 pr-4 rounded-xl outline-none focus:ring-2 focus:ring-amber-700/10" />
                 </div>
-                {formData.name && <p className="mt-2 text-xs font-bold text-amber-700">Ready to save: {formData.name}</p>}
+                {formData.name && <p className="mt-2 text-xs font-bold text-amber-700 flex items-center gap-1"><Star size={10} className="fill-amber-700"/> Selected: {formData.name}</p>}
               </div>
               <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100">
-                <div className="text-xs font-black uppercase text-stone-900">Cold Brew?</div>
+                <div className="text-xs font-black uppercase text-stone-900">Cold Brew available?</div>
                 <button type="button" onClick={() => setFormData({...formData, hasColdBrew: !formData.hasColdBrew})} className={`w-12 h-6 rounded-full relative transition-colors ${formData.hasColdBrew ? 'bg-blue-600' : 'bg-stone-200'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.hasColdBrew ? 'left-7' : 'left-1'}`} /></button>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Rating</label>
+                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">My Rating</label>
                   <RatingStars interactive={true} rating={formData.rating} size={28} onRate={(r) => setFormData({...formData, rating: r})} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Price</label>
+                  <label className="block text-[10px] font-black uppercase text-stone-400 mb-2 ml-1">Price Level</label>
                   <div className="flex gap-1">
                     {[1,2,3,4].map(n => <button key={n} type="button" onClick={() => setFormData({...formData, price: n})} className="p-1"><DollarSign size={20} className={formData.price >= n ? 'text-green-600' : 'text-stone-200'}/></button>)}
                   </div>
                 </div>
               </div>
-              <textarea rows="3" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full bg-stone-50 border border-stone-200 p-4 rounded-xl outline-none resize-none" placeholder="Notes..."></textarea>
-              <button type="submit" disabled={isSaving} className={`w-full flex items-center justify-center gap-2 text-white py-4 rounded-2xl font-black uppercase tracking-widest ${isSaving ? 'bg-stone-400' : 'bg-amber-700 hover:bg-amber-800 shadow-lg shadow-amber-700/20'}`}>{isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} {currentShop ? 'Save Changes' : 'Confirm Rank'}</button>
+              <textarea rows="3" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full bg-stone-50 border border-stone-200 p-4 rounded-xl outline-none resize-none focus:ring-2 focus:ring-amber-700/10" placeholder="What stood out? (Baristas, seating, wifi...)"></textarea>
+              <button type="submit" disabled={isSaving} className={`w-full flex items-center justify-center gap-2 text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-all active:scale-95 ${isSaving ? 'bg-stone-400' : 'bg-amber-700 hover:bg-amber-800 shadow-lg shadow-amber-700/20'}`}>{isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} {currentShop ? 'Update Rating' : 'Save Rating'}</button>
             </form>
           </div>
         </div>
@@ -406,13 +434,13 @@ export default function App() {
 
       <footer className="mt-12 py-8 bg-stone-100 flex flex-col items-center">
         <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-stone-200 shadow-sm mb-2">
-          <code className="text-[10px] text-stone-500">{user?.uid || 'Not Authenticated'}</code>
+          <code className="text-[10px] text-stone-500">{user?.uid || 'Initializing...'}</code>
           <button onClick={() => { navigator.clipboard.writeText(user?.uid || ''); alert('UID Copied!'); }} className="text-stone-400 hover:text-amber-700"><Copy size={12}/></button>
         </div>
         <p className="text-[9px] text-stone-400 font-bold uppercase">UID for Admin Access</p>
         {!firebaseConfig.apiKey && (
           <p className="mt-4 text-[10px] text-red-500 font-black animate-pulse">
-            ⚠️ WARNING: No Firebase API Key detected in environment.
+            ⚠️ WARNING: No Firebase API Key detected. Check your configuration.
           </p>
         )}
       </footer>
