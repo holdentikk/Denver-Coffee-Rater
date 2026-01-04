@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* If the line above doesn't work, use the classic three lines: */
+/* @tailwind base;
+@tailwind components;
+@tailwind utilities; 
+*/
