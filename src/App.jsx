@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+// Changed import to standard destructuring which is more reliable in Vercel/Vite builds
 import { 
   Coffee, 
   Star, 
@@ -27,11 +28,12 @@ import {
   doc, 
   onSnapshot, 
   serverTimestamp,
-  query,
-  orderBy 
+  query
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
+// IMPORTANT: When deploying to Vercel, replace the line below with your actual config object
+// example: const firebaseConfig = { apiKey: "...", ... };
 const firebaseConfig = {
   apiKey: "AIzaSyAU8KiDVf10Vc8TC_BMrfAuDKtCTKtH56g",
   authDomain: "denver-coffee-rater.firebaseapp.com",
@@ -40,7 +42,7 @@ const firebaseConfig = {
   messagingSenderId: "600755448882",
   appId: "1:600755448882:web:32afd9e59ffe6f5872202b",
   measurementId: "G-VCB5KZ4CPY"
-}
+};
 ;
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -53,19 +55,17 @@ export default function App() {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentShop, setCurrentShop] = useState(null); // For editing
+  const [currentShop, setCurrentShop] = useState(null); 
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Form State
   const [formData, setFormData] = useState({
     name: '',
     location: '',
     rating: 0,
     notes: '',
-    tags: '' // stored as simple string in form, array in db
+    tags: '' 
   });
 
-  // 1. Authentication Setup
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -84,17 +84,10 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Data Fetching (Firestore)
   useEffect(() => {
     if (!user) return;
 
-    // Path: artifacts/{appId}/users/{userId}/coffee_shops
     const shopsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops');
-    
-    // Note: Simple query without orderBy to comply with "No Complex Queries" rule initially,
-    // sorting will be done in memory if needed or simple queries.
-    // However, basic orderBy on a single field usually works without index if the collection is small 
-    // or sometimes requires index. To be safe per strict rules, we fetch and sort in JS.
     const q = query(shopsRef); 
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -103,7 +96,6 @@ export default function App() {
         ...doc.data()
       }));
       
-      // Sort in memory by createdAt descending (newest first)
       shopsData.sort((a, b) => {
         const dateA = a.createdAt?.seconds || 0;
         const dateB = b.createdAt?.seconds || 0;
@@ -119,8 +111,6 @@ export default function App() {
 
     return () => unsubscribe();
   }, [user]);
-
-  // --- Handlers ---
 
   const handleOpenModal = (shop = null) => {
     if (shop) {
@@ -168,11 +158,9 @@ export default function App() {
 
     try {
       if (currentShop) {
-        // Update
         const shopRef = doc(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops', currentShop.id);
         await updateDoc(shopRef, shopData);
       } else {
-        // Create
         const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops');
         await addDoc(collectionRef, {
           ...shopData,
@@ -187,7 +175,8 @@ export default function App() {
 
   const handleDelete = async (shopId) => {
     if (!user) return;
-    if (confirm('Are you sure you want to delete this coffee shop?')) {
+    // Note: window.confirm is used instead of confirm for better compatibility
+    if (window.confirm('Are you sure you want to delete this coffee shop?')) {
       try {
         const shopRef = doc(db, 'artifacts', appId, 'users', user.uid, 'coffee_shops', shopId);
         await deleteDoc(shopRef);
@@ -197,7 +186,6 @@ export default function App() {
     }
   };
 
-  // Filter shops
   const filteredShops = shops.filter(shop => 
     shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     shop.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -207,7 +195,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-stone-50 font-sans text-stone-800">
       
-      {/* Header */}
       <header className="bg-white border-b border-stone-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -226,10 +213,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-3xl mx-auto px-4 py-6">
         
-        {/* Search Bar */}
         <div className="relative mb-8">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
           <input 
@@ -241,14 +226,12 @@ export default function App() {
           />
         </div>
 
-        {/* Loading State */}
         {loading && (
           <div className="flex justify-center py-12">
             <Loader2 className="animate-spin text-amber-600" size={32} />
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && shops.length === 0 && (
           <div className="text-center py-16 px-4 bg-white rounded-2xl border border-stone-100 shadow-sm">
             <div className="bg-stone-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-400">
@@ -267,7 +250,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Shops List */}
         <div className="space-y-4">
           {filteredShops.map(shop => (
             <div key={shop.id} className="bg-white rounded-xl p-5 border border-stone-100 shadow-sm hover:shadow-md transition-shadow group">
@@ -286,7 +268,7 @@ export default function App() {
                     <Star size={16} className={`mr-1 ${shop.rating >= 1 ? "fill-amber-400 text-amber-400" : "text-stone-300"}`} />
                     <span className="font-bold text-amber-900">{shop.rating}</span>
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     <button 
                       onClick={() => handleOpenModal(shop)}
                       className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-lg"
@@ -323,10 +305,9 @@ export default function App() {
         </div>
       </main>
 
-      {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50">
               <h3 className="font-bold text-lg text-stone-900">
                 {currentShop ? 'Edit Coffee Shop' : 'Add New Shop'}
@@ -337,8 +318,6 @@ export default function App() {
             </div>
             
             <form onSubmit={handleSave} className="p-6 space-y-4">
-              
-              {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1">Shop Name</label>
                 <input
@@ -351,7 +330,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Location */}
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1">Location</label>
                 <input
@@ -363,7 +341,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Rating */}
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1">Rating</label>
                 <div className="flex gap-2">
@@ -372,7 +349,7 @@ export default function App() {
                       key={star}
                       type="button"
                       onClick={() => setFormData({...formData, rating: star})}
-                      className="focus:outline-none transition-transform hover:scale-110"
+                      className="focus:outline-none"
                     >
                       <Star 
                         size={32} 
@@ -383,7 +360,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Notes */}
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1">My Notes</label>
                 <textarea
@@ -395,7 +371,6 @@ export default function App() {
                 ></textarea>
               </div>
 
-              {/* Tags */}
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1">Tags (comma separated)</label>
                 <input
@@ -410,7 +385,7 @@ export default function App() {
               <div className="pt-2">
                 <button 
                   type="submit"
-                  className="w-full bg-stone-900 text-white py-3 rounded-xl font-semibold hover:bg-stone-800 active:scale-[0.98] transition-all flex justify-center items-center gap-2 shadow-lg shadow-stone-900/10"
+                  className="w-full bg-stone-900 text-white py-3 rounded-xl font-semibold hover:bg-stone-800 transition-all flex justify-center items-center gap-2"
                 >
                   <Save size={18} />
                   <span>Save Shop</span>
