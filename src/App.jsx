@@ -21,10 +21,7 @@ import {
   Droplets,
   Map as MapIcon,
   List,
-  Filter,
-  ArrowUpDown,
-  ChevronUp,
-  ChevronDown
+  ArrowUpDown
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -52,7 +49,7 @@ import {
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
-       apiKey: "AIzaSyAU8KiDVf10Vc8TC_BMrfAuDKtCTKtH56g",
+  apiKey: "AIzaSyAU8KiDVf10Vc8TC_BMrfAuDKtCTKtH56g",
 
   authDomain: "denver-coffee-rater.firebaseapp.com",
 
@@ -69,10 +66,10 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
     };
 
 // 1. PASTE YOUR GOOGLE MAPS API KEY HERE
-const GOOGLE_MAPS_API_KEY = "AIzaSyDDhQzKVKGRZcJ6T_phKAZ25mW4kq-VTfM";
+const GOOGLE_MAPS_API_KEY = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
 
 // 2. ADMIN UID (Used for the Public global list)
-const ADMIN_UID = "RC7NSjFGXnPQoOpBZecA4ahOp1rp1";
+const ADMIN_UID = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -89,7 +86,7 @@ const RatingStars = ({ rating, size = 14, interactive = false, onRate = null }) 
         const isFull = rating >= star;
         const isHalf = rating >= star - 0.5 && rating < star;
         return (
-          <div key={star} className="relative cursor-pointer group" onClick={() => interactive && onRate && onRate(star)}>
+          <div key={star} className={`relative group ${interactive ? 'cursor-pointer' : ''}`} onClick={() => interactive && onRate && onRate(star)}>
             {interactive && (
               <div 
                 className="absolute inset-y-0 left-0 w-1/2 z-10" 
@@ -97,16 +94,16 @@ const RatingStars = ({ rating, size = 14, interactive = false, onRate = null }) 
               />
             )}
             {isFull ? (
-              <Star size={size} className="fill-amber-400 text-amber-400" />
+              <Star size={size} className="fill-amber-400 text-amber-400 group-hover:scale-110 transition-transform" />
             ) : isHalf ? (
-              <div className="relative">
+              <div className="relative group-hover:scale-110 transition-transform">
                 <Star size={size} className="text-stone-200" />
                 <div className="absolute inset-0 overflow-hidden w-1/2">
                   <Star size={size} className="fill-amber-400 text-amber-400" />
                 </div>
               </div>
             ) : (
-              <Star size={size} className="text-stone-200" />
+              <Star size={size} className="text-stone-200 group-hover:scale-110 transition-transform" />
             )}
           </div>
         );
@@ -241,10 +238,14 @@ export default function App() {
   // Map Initialization & Marker Update
   useEffect(() => {
     if (displayMode === 'map' && mapsLoaded && mapContainerRef.current) {
+      // Re-init map if container changed or not yet created
       if (!mapRef.current) {
         mapRef.current = new window.google.maps.Map(mapContainerRef.current, {
           center: { lat: 39.7392, lng: -104.9903 }, // Denver
           zoom: 12,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
           styles: [
             { "featureType": "poi.business", "stylers": [{ "visibility": "off" }] },
             { "featureType": "transit", "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] }
@@ -252,53 +253,76 @@ export default function App() {
         });
       }
 
-      // Clear markers
+      // Clear existing markers
       markersRef.current.forEach(m => m.setMap(null));
       markersRef.current = [];
 
       const bounds = new window.google.maps.LatLngBounds();
-      let hasPoints = false;
+      let hasValidPoints = false;
 
       filteredAndSortedShops.forEach(shop => {
         if (shop.lat && shop.lng) {
-          hasPoints = true;
+          hasValidPoints = true;
+          const pos = { lat: Number(shop.lat), lng: Number(shop.lng) };
+          
           const marker = new window.google.maps.Marker({
-            position: { lat: shop.lat, lng: shop.lng },
+            position: pos,
             map: mapRef.current,
             title: shop.name,
+            animation: window.google.maps.Animation.DROP,
             icon: {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 10,
+              path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
               fillColor: "#b45309",
-              fillOpacity: 0.9,
+              fillOpacity: 1,
               strokeWeight: 2,
               strokeColor: "#ffffff",
+              scale: 1.5,
+              anchor: new window.google.maps.Point(12, 24),
             }
           });
 
           const infoWindow = new window.google.maps.InfoWindow({
-            content: `<div style="padding:8px font-family:sans-serif;">
-              <b style="color:#1c1917">${shop.name}</b><br/>
-              <span style="color:#b45309">${shop.rating} Stars</span>
-            </div>`
+            content: `
+              <div style="padding: 4px; font-family: ui-sans-serif, system-ui, sans-serif;">
+                <h4 style="margin: 0 0 4px; font-weight: 800; color: #1c1917;">${shop.name}</h4>
+                <div style="color: #b45309; font-size: 12px; font-weight: 700;">${shop.rating} Stars • ${'$'.repeat(shop.price)}</div>
+                <p style="margin: 4px 0 0; font-size: 11px; color: #78716c;">${shop.location || ''}</p>
+              </div>
+            `
           });
 
-          marker.addListener('click', () => infoWindow.open(mapRef.current, marker));
+          marker.addListener('click', () => {
+            infoWindow.open(mapRef.current, marker);
+          });
+
           markersRef.current.push(marker);
-          bounds.extend(marker.getPosition());
+          bounds.extend(pos);
         }
       });
 
-      if (hasPoints) mapRef.current.fitBounds(bounds);
+      // Adjust map to fit markers
+      if (hasValidPoints) {
+        mapRef.current.fitBounds(bounds);
+        // Prevent map from zooming in too far if only one marker
+        if (filteredAndSortedShops.filter(s => s.lat).length === 1) {
+          const listener = window.google.maps.event.addListener(mapRef.current, 'idle', () => {
+            mapRef.current.setZoom(15);
+            window.google.maps.event.removeListener(listener);
+          });
+        }
+      }
     }
   }, [displayMode, mapsLoaded, filteredAndSortedShops]);
 
-  const handleManualSort = async (index, direction) => {
-    // Note: Since we are sorting by fields, "manual rearrange" is simulated 
-    // by slightly adjusting the rating of the item to move it up/down 
-    // in the sorted list. For a true persistent "index" based sort, 
-    // we would need an 'order' field in Firestore.
-    alert("To rearrange rankings, simply update the star rating or price level. The list automatically sorts by your chosen category.");
+  const handleQuickUpdate = async (shop, field, value) => {
+    if (!user || (view === 'public' && user.uid !== ADMIN_UID && shop.createdBy !== user.uid)) return;
+    
+    try {
+      const docRef = doc(db, 'artifacts', appId, view === 'public' ? 'public' : 'users', view === 'public' ? 'data' : user.uid, 'coffee_shops', shop.id);
+      await updateDoc(docRef, { [field]: value, updatedAt: serverTimestamp() });
+    } catch (err) {
+      console.error("Error updating shop:", err);
+    }
   };
 
   const handleSave = async (e) => {
@@ -328,6 +352,13 @@ export default function App() {
   const handleGoogleLogin = () => signInWithPopup(auth, googleProvider);
   const handleLogout = () => signOut(auth);
 
+  const getGoogleMapsUrl = (shop) => {
+    if (shop.placeId) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.name)}&destination_place_id=${shop.placeId}`;
+    }
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.location || shop.name)}`;
+  };
+
   if (authLoading) return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><Loader2 className="animate-spin text-amber-800" size={40} /></div>;
 
   return (
@@ -349,7 +380,7 @@ export default function App() {
               <button onClick={() => setDisplayMode('map')} className={`p-2 rounded-lg transition-all ${displayMode === 'map' ? 'bg-white shadow-sm text-amber-700' : 'text-stone-400'}`}><MapIcon size={20}/></button>
             </div>
             
-            <button onClick={() => { setIsModalOpen(true); setCurrentShop(null); }} className="bg-amber-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-800 transition-colors shadow-md">
+            <button onClick={() => { setIsModalOpen(true); setCurrentShop(null); setFormData({ name: '', location: '', placeId: '', rating: 5, price: 1, notes: '', hasColdBrew: false, lat: null, lng: null }); }} className="bg-amber-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-800 transition-colors shadow-md">
               <Plus size={18}/> <span className="hidden sm:inline">Add Shop</span>
             </button>
 
@@ -406,41 +437,68 @@ export default function App() {
               <div className="col-span-full py-20 flex justify-center"><Loader2 className="animate-spin text-amber-700" size={32} /></div>
             ) : filteredAndSortedShops.length === 0 ? (
               <div className="col-span-full text-center py-20 border-2 border-dashed border-stone-200 rounded-3xl text-stone-400 font-bold uppercase tracking-widest text-xs">No shops found</div>
-            ) : filteredAndSortedShops.map((shop, idx) => (
-              <div key={shop.id} className="bg-white rounded-3xl p-5 border border-stone-100 shadow-sm hover:shadow-md transition-shadow relative group">
-                {sortBy === 'rating' && view === 'public' && (
-                  <div className="absolute top-0 left-0 bg-amber-700 text-white px-3 py-1 text-[10px] font-black rounded-br-2xl">#{idx + 1}</div>
-                )}
-                <div className="flex justify-between items-start mb-2">
-                  <div className="max-w-[70%]">
-                    <h3 className="text-lg font-black text-stone-900 leading-tight truncate">{shop.name}</h3>
-                    <div className="text-amber-700 text-[10px] font-bold flex items-center gap-1 mt-0.5"><MapPin size={10} /> {shop.location?.split(',')[0]}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <RatingStars rating={shop.rating} />
-                    <div className="flex">
-                      {[1,2,3,4].map(i => <DollarSign key={i} size={12} className={i <= shop.price ? 'text-green-600' : 'text-stone-200'} />)}
+            ) : filteredAndSortedShops.map((shop, idx) => {
+              const canEdit = view === 'private' || user?.uid === ADMIN_UID || shop.createdBy === user?.uid;
+              return (
+                <div key={shop.id} className="bg-white rounded-3xl p-5 border border-stone-100 shadow-sm hover:shadow-md transition-shadow relative group flex flex-col">
+                  {sortBy === 'rating' && view === 'public' && (
+                    <div className="absolute top-0 left-0 bg-amber-700 text-white px-3 py-1 text-[10px] font-black rounded-br-2xl">#{idx + 1}</div>
+                  )}
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="max-w-[65%]">
+                      <h3 className="text-lg font-black text-stone-900 leading-tight truncate">{shop.name}</h3>
+                      
+                      {/* Interactive Map Link */}
+                      <a 
+                        href={getGoogleMapsUrl(shop)} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-amber-700 text-[10px] font-bold flex items-center gap-1 mt-0.5 hover:underline decoration-amber-700/30 underline-offset-2"
+                        title="Route in Google Maps"
+                      >
+                        <MapPin size={10} /> 
+                        <span className="truncate block">{shop.location?.split(',')[0]}</span>
+                      </a>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <RatingStars 
+                        rating={shop.rating} 
+                        interactive={canEdit} 
+                        onRate={(val) => handleQuickUpdate(shop, 'rating', val)} 
+                      />
+                      <div className="flex">
+                        {[1,2,3,4].map(i => (
+                          <button 
+                            key={i} 
+                            disabled={!canEdit}
+                            onClick={() => handleQuickUpdate(shop, 'price', i)}
+                            className={`transition-transform hover:scale-110 ${!canEdit ? 'cursor-default' : 'cursor-pointer'}`}
+                          >
+                            <DollarSign size={12} className={i <= shop.price ? 'text-green-600' : 'text-stone-200'} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-                {shop.notes && <p className="text-stone-500 text-xs italic line-clamp-2 mb-3">"{shop.notes}"</p>}
-                <div className="flex items-center justify-between mt-auto">
-                  <div className="flex gap-2">
-                    {shop.hasColdBrew ? (
-                      <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase"><Snowflake size={10} /> Cold Brew</span>
-                    ) : (
-                      <span className="flex items-center gap-1 bg-stone-100 text-stone-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase"><Droplets size={10} /> No Cold Brew</span>
+                  {shop.notes && <p className="text-stone-500 text-xs italic line-clamp-2 mb-3">"{shop.notes}"</p>}
+                  <div className="mt-auto pt-3 flex items-center justify-between border-t border-stone-50">
+                    <div className="flex gap-2">
+                      {shop.hasColdBrew ? (
+                        <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase"><Snowflake size={10} /> Cold Brew</span>
+                      ) : (
+                        <span className="flex items-center gap-1 bg-stone-100 text-stone-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase"><Droplets size={10} /> No Cold Brew</span>
+                      )}
+                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1">
+                        <button onClick={() => { setCurrentShop(shop); setFormData(shop); setIsModalOpen(true); }} className="p-2 text-stone-400 hover:text-stone-900 transition-colors"><Edit2 size={14}/></button>
+                        <button onClick={async () => { if(confirm('Delete?')) await deleteDoc(doc(db, 'artifacts', appId, view === 'public' ? 'public' : 'users', view === 'public' ? 'data' : user.uid, 'coffee_shops', shop.id))}} className="p-2 text-stone-400 hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                      </div>
                     )}
                   </div>
-                  {(view === 'private' || user?.uid === ADMIN_UID) && (
-                    <div className="flex gap-2">
-                      <button onClick={() => { setCurrentShop(shop); setFormData(shop); setIsModalOpen(true); }} className="p-2 text-stone-400 hover:text-stone-900 transition-colors"><Edit2 size={14}/></button>
-                      <button onClick={async () => { if(confirm('Delete?')) await deleteDoc(doc(db, 'artifacts', appId, view === 'public' ? 'public' : 'users', view === 'public' ? 'data' : user.uid, 'coffee_shops', shop.id))}} className="p-2 text-stone-400 hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
-                    </div>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="relative w-full h-[60vh] bg-stone-200 rounded-3xl overflow-hidden shadow-inner border border-stone-300">
