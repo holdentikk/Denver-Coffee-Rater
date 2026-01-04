@@ -59,7 +59,7 @@ const firebaseConfig = {
 
 
 const GOOGLE_MAPS_API_KEY = "AIzaSyDDhQzKVKGRZcJ6T_phKAZ25mW4kq-VTfM";
-const ADMIN_UID = "mYFcN2vUxxYQLRfsSmze2zDD4vp";
+const ADMIN_UID = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
