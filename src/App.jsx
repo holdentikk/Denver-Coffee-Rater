@@ -66,7 +66,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
     };
 
 // 1. PASTE YOUR GOOGLE MAPS API KEY HERE
-const GOOGLE_MAPS_API_KEY = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
+const GOOGLE_MAPS_API_KEY = "AIzaSyDDhQzKVKGRZcJ6T_phKAZ25mW4kq-VTfM";
 
 // 2. ADMIN UID (Used for the Public global list)
 const ADMIN_UID = "C7NSjFGXnPQoOpBZecA4ahOp1rp1";
