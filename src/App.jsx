@@ -19,7 +19,8 @@ import {
   StarHalf,
   AlertCircle,
   Copy,
-  LogIn
+  LogIn,
+  Droplets
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -365,7 +366,11 @@ export default function App() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-lg font-black text-stone-900 leading-tight">{shop.name}</h2>
-                        {shop.hasColdBrew && <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase"><Snowflake size={10} /> Cold Brew</span>}
+                        {shop.hasColdBrew ? (
+                          <span className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase"><Snowflake size={10} /> Cold Brew</span>
+                        ) : (
+                          <span className="flex items-center gap-1 bg-stone-100 text-stone-400 px-2 py-0.5 rounded-full text-[10px] font-black uppercase"><Droplets size={10} /> No Cold Brew</span>
+                        )}
                       </div>
                       <div className="mt-1 text-amber-700 text-xs font-bold flex items-center gap-1">
                         <MapPin size={12} /> {shop.location?.split(',')[0]}
