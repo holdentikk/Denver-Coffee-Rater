@@ -212,6 +212,64 @@ export default function App() {
     return result;
   }, [shops, searchTerm, neighborhoodFilter, sortBy, sortOrder]);
 
+  // Restored Map Marker Logic
+  useEffect(() => {
+    if (displayMode === 'map' && mapsLoaded && mapContainerRef.current) {
+      if (!mapRef.current) {
+        mapRef.current = new window.google.maps.Map(mapContainerRef.current, {
+          center: { lat: 39.7392, lng: -104.9903 },
+          zoom: 12,
+          mapTypeControl: false,
+          streetViewControl: false,
+          styles: [
+            { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] }
+          ]
+        });
+      }
+
+      // Clear existing markers
+      markersRef.current.forEach(m => m.setMap(null));
+      markersRef.current = [];
+
+      const bounds = new window.google.maps.LatLngBounds();
+      let hasPoints = false;
+
+      filteredAndSortedShops.forEach(shop => {
+        if (shop.lat && shop.lng) {
+          hasPoints = true;
+          const pos = { lat: Number(shop.lat), lng: Number(shop.lng) };
+          const marker = new window.google.maps.Marker({
+            position: pos,
+            map: mapRef.current,
+            title: shop.name,
+            icon: {
+              path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
+              fillColor: "#b45309",
+              fillOpacity: 1,
+              strokeWeight: 2,
+              strokeColor: "#ffffff",
+              scale: 1.5,
+              anchor: new window.google.maps.Point(12, 24),
+            }
+          });
+          
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `<div style="padding: 5px"><strong>${shop.name}</strong><br/>${shop.rating} Stars</div>`
+          });
+          marker.addListener('click', () => infoWindow.open(mapRef.current, marker));
+          markersRef.current.push(marker);
+          bounds.extend(pos);
+        }
+      });
+
+      if (hasPoints) {
+        mapRef.current.fitBounds(bounds);
+        if (filteredAndSortedShops.length === 1) mapRef.current.setZoom(15);
+      }
+    }
+  }, [displayMode, mapsLoaded, filteredAndSortedShops]);
+
   const handleQuickUpdate = async (shop, field, value) => {
     if (!user) return;
     const isPublic = view === 'public';
@@ -244,6 +302,11 @@ export default function App() {
   const handleGoogleLogin = async () => { try { setAuthLoading(true); await signInWithPopup(auth, googleProvider); } catch (err) { console.error(err); } finally { setAuthLoading(false); } };
   const handleLogout = async () => { try { setAuthLoading(true); await signOut(auth); await signInAnonymously(auth); } catch (err) { console.error(err); } finally { setAuthLoading(false); } };
 
+  const getGoogleMapsUrl = (shop) => {
+    if (shop.placeId) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.name)}&destination_place_id=${shop.placeId}`;
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.location || shop.name)}`;
+  };
+
   if (authLoading) return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><Loader2 className="animate-spin text-amber-800" size={40} /></div>;
 
   return (
@@ -254,7 +317,7 @@ export default function App() {
             <div className="bg-amber-700 p-2 rounded-xl text-white shadow-lg"><Coffee size={24} /></div>
             <div className="hidden sm:block">
               <h1 className="text-xl font-black tracking-tighter uppercase leading-none">Denver Brews</h1>
-              <p className="text-[10px] font-bold text-stone-400 uppercase mt-1">Coffee Rater v2.1</p>
+              <p className="text-[10px] font-bold text-stone-400 uppercase mt-1">Coffee Rater v2.2</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -336,7 +399,7 @@ export default function App() {
                 {shop.notes && <p className="text-stone-500 text-xs italic mb-4 line-clamp-2">"{shop.notes}"</p>}
                 <div className="mt-auto pt-4 flex items-center justify-between border-t border-stone-50">
                   <div className="flex gap-2">
-                    {shop.hasColdBrew ? <span className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1"><Snowflake size={10} /> Cold Brew</span> : <span className="text-stone-300 text-[9px] font-black uppercase flex items-center gap-1"><Droplets size={10} /> Hot Only</span>}
+                    {shop.hasColdBrew ? <span className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1"><Snowflake size={10} /> Cold Brew</span> : <span className="text-stone-300 text-[9px] font-black uppercase flex items-center gap-1"><Droplets size={10} /> No Cold Brew</span>}
                   </div>
                   {(view === 'private' || user?.uid === ADMIN_UID || shop.createdBy === user?.uid) && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -349,7 +412,7 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <div className="w-full h-[60vh] bg-stone-200 rounded-3xl overflow-hidden border border-stone-300" ref={mapContainerRef} />
+          <div className="w-full h-[60vh] bg-stone-200 rounded-3xl overflow-hidden border border-stone-300 shadow-inner" ref={mapContainerRef} />
         )}
       </main>
 
@@ -412,9 +475,4 @@ export default function App() {
       </footer>
     </div>
   );
-}
-
-function getGoogleMapsUrl(shop) {
-  if (shop.placeId) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.name)}&destination_place_id=${shop.placeId}`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.location || shop.name)}`;
 }
